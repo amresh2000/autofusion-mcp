@@ -1,7 +1,12 @@
 import "dotenv/config";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema
+} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 import { spawn } from "child_process";
 
 // ---- ENV ----
@@ -170,19 +175,37 @@ function toTableFlags(a: any) {
 }
 
 // ---- MCP server (single tool) ----
-const server = new McpServer({ name: "autofusion-mcp", version: "0.2.0" });
-
-server.registerTool(
-  "autofusion_compare",
+const server = new Server(
   {
-    title: "Autofusion Compare",
-    description:
-      "Unified comparison. Provide a natural-language 'prompt' and/or structured fields. " +
-      "Call with dryRun=true first; if status=need_info, ask the user the returned questions; " +
-      "if status=ok, call again with dryRun=false using 'normalizedArgs'.",
-    inputSchema: CompareArgs.shape,
+    name: "autofusion-mcp",
+    version: "0.2.0"
   },
-  async (input: z.infer<typeof CompareArgs>) => {
+  {
+    capabilities: {
+      tools: {},
+    },
+  }
+);
+
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "autofusion_compare",
+      description:
+        "Unified comparison. Provide a natural-language 'prompt' and/or structured fields. " +
+        "Call with dryRun=true first; if status=need_info, ask the user the returned questions; " +
+        "if status=ok, call again with dryRun=false using 'normalizedArgs'.",
+      inputSchema: zodToJsonSchema(CompareArgs),
+    },
+  ],
+}));
+
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  if (request.params.name !== "autofusion_compare") {
+    throw new Error(`Unknown tool: ${request.params.name}`);
+  }
+
+  const input = request.params.arguments as z.infer<typeof CompareArgs>;
     // Merge prompt-derived hints with explicit fields (explicit wins)
     const hints = parseFromPrompt(input.prompt);
     const args = { ...hints, ...input };
@@ -207,10 +230,9 @@ server.registerTool(
 
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-      structuredContent: result
+      isError: false,
     };
-  }
-);
+  });
 
 // Start the server
 async function startServer() {
@@ -219,4 +241,6 @@ async function startServer() {
   console.error("[autofusion-mcp] unified router ready");
 }
 
-startServer().catch(console.error);
+if (require.main === module) {
+  startServer().catch(console.error);
+}
