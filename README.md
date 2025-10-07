@@ -49,15 +49,35 @@ You should see: `[autofusion-mcp] unified router ready`
 
 Stop with `Ctrl+C`.
 
-## VS Code Copilot Integration
+## GitHub Copilot Integration
 
-### Configure MCP Server
+### Option 1: Repository-specific (Recommended)
 
-Add to your VS Code Copilot MCP configuration:
+Create `.vscode/mcp.json` in your project root:
 
 ```json
 {
-  "servers": {
+  "autofusion-mcp": {
+    "command": "node",
+    "args": ["./dist/server.js"],
+    "env": {
+      "JAVA_BIN": "java",
+      "AUTOFUSION_JAR": "/absolute/path/to/autofusion-1.0.0-shaded.jar",
+      "AUTOFUSION_HEAP": "-Xmx2g"
+    }
+  }
+}
+```
+
+**Benefits**: Shared with team, travels with repository, relative paths supported.
+
+### Option 2: Personal/Global Configuration
+
+Add to your VS Code `settings.json`:
+
+```json
+{
+  "github.copilot.mcp.servers": {
     "autofusion-mcp": {
       "command": "node",
       "args": ["/absolute/path/to/autofusion-mcp/dist/server.js"],
@@ -71,7 +91,13 @@ Add to your VS Code Copilot MCP configuration:
 }
 ```
 
-Restart VS Code. In Copilot Chat, list tools to verify `autofusion_compare` is available.
+### Setup Steps
+
+1. Choose configuration method above
+2. Update `AUTOFUSION_JAR` path for your system
+3. Restart VS Code
+4. Click "Start" button in `.vscode/mcp.json` (if using Option 1)
+5. Verify `autofusion_compare` tool appears in Copilot Chat tools list
 
 ## Usage Examples
 
