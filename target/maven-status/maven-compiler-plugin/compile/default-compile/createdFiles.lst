@@ -1,0 +1,8 @@
+com/cacib/auf/mcp/MCPApplication.class
+com/cacib/auf/mcp/MCPApiTools$ValidationResult.class
+com/cacib/auf/mcp/MCPApiTools$AuthType.class
+com/cacib/auf/mcp/MCPApiTools.class
+com/cacib/auf/mcp/MCPApiTools$1.class
+com/cacib/auf/mcp/ExcelComparisonMCPWrapper.class
+com/cacib/auf/mcp/CsvComparisonMCPWrapper.class
+com/cacib/auf/mcp/CsvToTableConverter.class
