@@ -23,7 +23,7 @@ public class CsvToTableConverter {
      * @param filePath Path to the CSV file
      * @param delimiter Delimiter used in the CSV file
      * @param skipHeader Whether to skip the header row
-     * @param uniqueKeyColumn Name of the unique key column (will be added if not present)
+     * @param uniqueKeyColumn Name of the unique key column (comma-separated for multi-column keys)
      * @return List of maps representing table rows
      * @throws FileNotFoundException If the CSV file is not found
      * @throws IOException If there's an error reading the file
@@ -64,15 +64,21 @@ public class CsvToTableConverter {
             dataStartIndex = 0;
         }
 
-        // Ensure unique key column exists in headers
-        headers = ensureUniqueKeyColumn(headers, uniqueKeyColumn);
+        // Parse multi-column keys and validate
+        List<String> keyColumns = parseKeyColumns(uniqueKeyColumn);
+        validateKeyColumns(headers, keyColumns);
+
+        // Add composite key column if multi-column key specified
+        if (keyColumns.size() > 1) {
+            headers = addCompositeKeyColumn(headers);
+        }
 
         List<Map<String, String>> tableData = new ArrayList<>();
 
         for (int i = dataStartIndex; i < csvLines.size(); i++) {
             String line = csvLines.get(i).trim();
             if (!line.isEmpty()) {
-                Map<String, String> rowMap = parseLineToMap(line, headers, delimiter, uniqueKeyColumn, i);
+                Map<String, String> rowMap = parseLineToMap(line, headers, delimiter, keyColumns, i);
                 tableData.add(rowMap);
             }
         }
@@ -88,7 +94,7 @@ public class CsvToTableConverter {
             String line,
             String[] headers,
             String delimiter,
-            String uniqueKeyColumn,
+            List<String> keyColumns,
             int rowIndex
     ) {
         Map<String, String> rowMap = new LinkedHashMap<>();
@@ -106,9 +112,27 @@ public class CsvToTableConverter {
             rowMap.put(headers[i], value);
         }
 
-        // Ensure unique key column has a value
-        if (!rowMap.containsKey(uniqueKeyColumn) || rowMap.get(uniqueKeyColumn).isEmpty()) {
-            rowMap.put(uniqueKeyColumn, "ROW_" + rowIndex);
+        // Handle composite key creation for multi-column keys
+        if (keyColumns.size() > 1) {
+            StringBuilder compositeKey = new StringBuilder();
+            for (int i = 0; i < keyColumns.size(); i++) {
+                String keyCol = keyColumns.get(i);
+                String keyValue = rowMap.get(keyCol);
+                if (keyValue == null || keyValue.isEmpty()) {
+                    keyValue = "NULL_" + i;
+                }
+                compositeKey.append(keyValue);
+                if (i < keyColumns.size() - 1) {
+                    compositeKey.append("|"); // Use pipe as separator
+                }
+            }
+            rowMap.put("_COMPOSITE_KEY_", compositeKey.toString());
+        } else if (keyColumns.size() == 1) {
+            // Ensure single key column has a value
+            String singleKey = keyColumns.get(0);
+            if (!rowMap.containsKey(singleKey) || rowMap.get(singleKey).isEmpty()) {
+                rowMap.put(singleKey, "ROW_" + rowIndex);
+            }
         }
 
         return rowMap;
@@ -145,20 +169,58 @@ public class CsvToTableConverter {
     }
 
     /**
-     * Ensure the unique key column exists in the headers array.
+     * Parse comma-separated key column string into list.
      */
-    private static String[] ensureUniqueKeyColumn(String[] headers, String uniqueKeyColumn) {
-        // Check if unique key column already exists
-        for (String header : headers) {
-            if (header.equals(uniqueKeyColumn)) {
-                return headers; // Already exists
+    private static List<String> parseKeyColumns(String uniqueKeyColumn) {
+        List<String> keyColumns = new ArrayList<>();
+        if (uniqueKeyColumn != null && !uniqueKeyColumn.trim().isEmpty()) {
+            String[] keys = uniqueKeyColumn.split(",");
+            for (String key : keys) {
+                String trimmedKey = key.trim();
+                if (!trimmedKey.isEmpty()) {
+                    keyColumns.add(trimmedKey);
+                }
             }
         }
+        return keyColumns;
+    }
 
-        // Add unique key column if it doesn't exist
+    /**
+     * Validate that all key columns exist in headers.
+     */
+    private static void validateKeyColumns(String[] headers, List<String> keyColumns) throws IOException {
+        Set<String> headerSet = new HashSet<>(Arrays.asList(headers));
+        for (String keyCol : keyColumns) {
+            if (!headerSet.contains(keyCol)) {
+                throw new IOException("Key column '" + keyCol + "' not found in CSV headers: " + Arrays.toString(headers));
+            }
+        }
+    }
+
+    /**
+     * Add composite key column to headers for multi-column keys.
+     */
+    private static String[] addCompositeKeyColumn(String[] headers) {
         String[] newHeaders = new String[headers.length + 1];
-        newHeaders[0] = uniqueKeyColumn;
+        newHeaders[0] = "_COMPOSITE_KEY_";
         System.arraycopy(headers, 0, newHeaders, 1, headers.length);
         return newHeaders;
+    }
+
+    /**
+     * Get the effective unique key column name for table comparison.
+     * Returns composite key name for multi-column keys.
+     */
+    public static String getEffectiveKeyColumn(String uniqueKeyColumn) {
+        if (uniqueKeyColumn == null || uniqueKeyColumn.trim().isEmpty()) {
+            return "ID"; // Default fallback
+        }
+
+        List<String> keyColumns = parseKeyColumns(uniqueKeyColumn);
+        if (keyColumns.size() > 1) {
+            return "_COMPOSITE_KEY_";
+        } else {
+            return keyColumns.get(0);
+        }
     }
 }

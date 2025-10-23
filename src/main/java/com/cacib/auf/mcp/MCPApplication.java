@@ -17,6 +17,12 @@ public class MCPApplication {
     private static final Logger log = LoggerFactory.getLogger(MCPApplication.class);
 
     public static void main(String[] args) {
+        // Test user's CSV files first
+        if (args.length > 0 && "test".equals(args[0])) {
+            testUserCsvFiles();
+            return;
+        }
+
         // ===== Stdio Server Transport =====
         var transportProvider = new StdioServerTransportProvider(new ObjectMapper());
 
@@ -26,10 +32,10 @@ public class MCPApplication {
         // ===== API Schema Validator Tool Specification =====
         var apiSchemaValidatorToolSpecification = getApiSchemaValidatorToolSpecification();
 
-        // ===== Excel Comparison Tool Specification =====
+        // ===== Simplified Excel Comparison Tool Specification =====
         var excelComparisonToolSpecification = getExcelComparisonToolSpecification();
 
-        // ===== CSV Comparison Tool Specification =====
+        // ===== Simplified CSV Comparison Tool Specification =====
         var csvComparisonToolSpecification = getCsvComparisonToolSpecification();
 
         // ===== MCP Server =====
@@ -179,92 +185,107 @@ public class MCPApplication {
             "properties": {
                 "file1Path": { "type": "string" },
                 "file2Path": { "type": "string" },
-                "outputPath": { "type": "string" },
-                "sheetName": { "type": "string" },
-                "compareMode": {
+                "uniqueKey": {
                     "type": "string",
-                    "enum": ["cell_by_cell", "row_difference"]
+                    "description": "Column name(s) to use as unique key for row matching (required). For multi-column keys, use comma-separated format (e.g., 'CustomerID,Region')"
                 },
-                "headerRow": {
-                    "type": "integer",
-                    "description": "Row number containing headers (default: 1)",
-                    "minimum": 1
+                "thresholds": {
+                    "type": "object",
+                    "description": "Map of column names to percentage thresholds for numeric comparisons (e.g., {'Price': 5.0, 'Amount': 2.0})"
                 },
-                "dataStartRow": {
-                    "type": "integer",
-                    "description": "First row containing data (default: 2)",
-                    "minimum": 1
-                },
-                "keyColumns": {
+                "ignoreColumns": {
                     "type": "string",
-                    "description": "Comma-separated key columns for matching (e.g., 'A,B' or 'Account,Department')"
+                    "description": "Comma-separated column names to ignore during comparison (e.g., 'Timestamp,LastModified')"
                 },
-                "ignoredSheets": {
+                "outputPath": {
                     "type": "string",
-                    "description": "Comma-separated sheet names to ignore during comparison"
+                    "description": "Output directory path for generated 4-sheet Excel report (required)"
                 },
-                "outputDir": {
+                "sourceSheetName": {
                     "type": "string",
-                    "description": "Custom output directory for comparison results"
+                    "description": "Name of sheet in source file (default: 'Sheet1')"
                 },
-                "outputFileName": {
+                "targetSheetName": {
                     "type": "string",
-                    "description": "Custom output file name for comparison results"
+                    "description": "Name of sheet in target file (default: 'Sheet1')"
                 }
             },
-            "required": ["file1Path", "file2Path"]
+            "required": ["file1Path", "file2Path", "uniqueKey", "outputPath"]
         }
         """;
 
         return new McpServerFeatures.SyncToolSpecification(
                 new McpSchema.Tool(
                         "excel_compare",
-                        "Compare two Excel files with advanced configuration options including custom header rows, key columns, and sheet exclusion. Supports both basic and config-based comparison modes.",
+                        "Compare two Excel files using unified AfExcelReader + AfTableComparisonCTRLV2 architecture. Always generates comprehensive 4-sheet Excel reports with Summary, Mismatches, Source Extra, and Target Extra sheets.",
                         schema
                 ),
                 (exchange, arguments) -> {
+                    // Validate required parameters
                     String file1Path = (String) arguments.get("file1Path");
                     String file2Path = (String) arguments.get("file2Path");
-                    String outputPath = (String) arguments.getOrDefault("outputPath", null);
-                    String sheetName = (String) arguments.getOrDefault("sheetName", null);
-                    String compareMode = (String) arguments.getOrDefault("compareMode", "row_difference");
-                    Integer headerRow = (Integer) arguments.getOrDefault("headerRow", null);
-                    Integer dataStartRow = (Integer) arguments.getOrDefault("dataStartRow", null);
-                    String keyColumns = (String) arguments.getOrDefault("keyColumns", null);
-                    String ignoredSheets = (String) arguments.getOrDefault("ignoredSheets", null);
-                    String outputDir = (String) arguments.getOrDefault("outputDir", null);
-                    String outputFileName = (String) arguments.getOrDefault("outputFileName", null);
+                    String uniqueKey = (String) arguments.get("uniqueKey");
+                    String outputPath = (String) arguments.get("outputPath");
+
+                    if (file1Path == null || file1Path.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file1Path"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+                    if (file2Path == null || file2Path.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file2Path"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+                    if (uniqueKey == null || uniqueKey.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: uniqueKey"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+                    if (outputPath == null || outputPath.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: outputPath"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+
+                    // Optional parameters
+                    @SuppressWarnings("unchecked")
+                    Map<String, Double> thresholds = (Map<String, Double>) arguments.getOrDefault("thresholds", null);
+                    String ignoreColumnsStr = (String) arguments.getOrDefault("ignoreColumns", null);
+                    String sourceSheetName = (String) arguments.getOrDefault("sourceSheetName", null);
+                    String targetSheetName = (String) arguments.getOrDefault("targetSheetName", null);
 
                     try {
-                        CompareResult result;
-
-                        // Smart routing: Use config-based method if advanced parameters are provided
-                        if (headerRow != null || dataStartRow != null ||
-                            (keyColumns != null && !keyColumns.trim().isEmpty()) ||
-                            (ignoredSheets != null && !ignoredSheets.trim().isEmpty()) ||
-                            (outputDir != null && !outputDir.trim().isEmpty()) ||
-                            (outputFileName != null && !outputFileName.trim().isEmpty())) {
-
-                            log.info("Using Excel comparison with config - advanced parameters detected");
-                            result = ExcelComparisonMCPWrapper.compareExcelFilesWithConfig(
-                                    file1Path, file2Path, outputPath, sheetName, compareMode,
-                                    headerRow, dataStartRow, keyColumns, ignoredSheets, outputDir, outputFileName);
-                        } else {
-                            log.info("Using Excel comparison basic mode - backwards compatibility");
-                            result = ExcelComparisonMCPWrapper.compareExcelFiles(
-                                    file1Path, file2Path, outputPath, sheetName, compareMode);
+                        // Convert ignoreColumns string to Set
+                        Set<String> ignoreColumns = null;
+                        if (ignoreColumnsStr != null && !ignoreColumnsStr.trim().isEmpty()) {
+                            ignoreColumns = Set.of(ignoreColumnsStr.split(","));
                         }
 
+                        // Generate auto filename and combine with directory path
+                        String autoFilename = generateReportFilename(file1Path, file2Path, "Excel");
+                        String fullOutputPath = new java.io.File(outputPath, autoFilename).getAbsolutePath();
+
+                        // Use simplified Excel comparison method
+                        CompareResult result = ExcelComparisonMCPWrapper.compareExcelFiles(
+                                file1Path, file2Path, uniqueKey, thresholds, ignoreColumns,
+                                fullOutputPath, sourceSheetName, targetSheetName);
+
                         List<McpSchema.Content> contents = new ArrayList<>();
-                        contents.add(new McpSchema.TextContent("Comparison Mode: " + compareMode));
-                        contents.add(new McpSchema.TextContent("Mismatched Records: " + result.getMismatchRecordCount()));
+                        contents.add(new McpSchema.TextContent("Excel Comparison Complete"));
                         contents.add(new McpSchema.TextContent("Source Records: " + result.getSourceRecordCount()));
-                        contents.add(new McpSchema.TextContent("Mismatch Details: " + result.getMismatchDetail().toString()));
-                        contents.add(new McpSchema.TextContent("Mismatch Count by Columns: " + result.getMismatchCountByColumns().toString()));
+                        contents.add(new McpSchema.TextContent("Mismatched Records: " + result.getMismatchRecordCount()));
+                        contents.add(new McpSchema.TextContent("Mismatch Details: " +
+                                (result.getMismatchDetail() != null ? result.getMismatchDetail().toString() : "No details available")));
+                        contents.add(new McpSchema.TextContent("Mismatch Count by Columns: " +
+                                (result.getMismatchCountByColumns() != null ? result.getMismatchCountByColumns().toString() : "No data available")));
+                        contents.add(new McpSchema.TextContent("4-Sheet Excel Report: Generated successfully"));
+                        contents.add(new McpSchema.TextContent("Report Location: " + fullOutputPath));
 
                         return new McpSchema.CallToolResult(contents, false);
 
                     } catch (Exception e) {
+                        log.error("Excel comparison failed", e);
                         List<McpSchema.Content> errorContents = new ArrayList<>();
                         errorContents.add(new McpSchema.TextContent("Error: " + e.getMessage()));
                         return new McpSchema.CallToolResult(errorContents, true);
@@ -289,64 +310,85 @@ public class MCPApplication {
                 "delimiter2": { "type": "string" },
                 "skipHeader1": { "type": "boolean" },
                 "skipHeader2": { "type": "boolean" },
-                "uniqueKeyColumn": { "type": "string" },
+                "uniqueKey": { "type": "string" },
                 "thresholds": { "type": "object" },
-                "customUniqueKey": {
-                    "type": "string",
-                    "description": "Custom unique key column name (overrides uniqueKeyColumn)"
-                },
                 "ignoreColumns": {
                     "type": "string",
                     "description": "CSV string of columns to ignore during comparison (e.g., 'password,ssn,credit_card')"
+                },
+                "outputPath": {
+                    "type": "string",
+                    "description": "Output directory path for 4-sheet Excel report (required)"
                 }
             },
-            "required": ["file1Path", "file2Path"]
+            "required": ["file1Path", "file2Path", "uniqueKey", "outputPath"]
         }
         """;
 
         return new McpServerFeatures.SyncToolSpecification(
                 new McpSchema.Tool(
                         "csv_compare",
-                        "Compare two CSV files with configurable delimiters, header handling, numeric thresholds, custom unique keys, and column exclusion. Supports both V1 and V2 comparison engines.",
+                        "Compare two CSV files using unified AfCsvReader + AfTableComparisonCTRLV2 architecture. Always generates comprehensive 4-sheet Excel reports with Summary, Mismatches, Source Extra, and Target Extra sheets.",
                         schema
                 ),
                 (exchange, arguments) -> {
+                    // Validate required parameters
                     String file1Path = (String) arguments.get("file1Path");
                     String file2Path = (String) arguments.get("file2Path");
+                    String uniqueKey = (String) arguments.get("uniqueKey");
+                    String outputPath = (String) arguments.get("outputPath");
+
+                    if (file1Path == null || file1Path.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file1Path"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+                    if (file2Path == null || file2Path.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file2Path"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+                    if (uniqueKey == null || uniqueKey.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: uniqueKey"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+                    if (outputPath == null || outputPath.trim().isEmpty()) {
+                        List<McpSchema.Content> errorContents = new ArrayList<>();
+                        errorContents.add(new McpSchema.TextContent("Missing required parameter: outputPath"));
+                        return new McpSchema.CallToolResult(errorContents, true);
+                    }
+
+                    // Optional parameters
                     String delimiter1 = (String) arguments.getOrDefault("delimiter1", null);
                     String delimiter2 = (String) arguments.getOrDefault("delimiter2", null);
                     Boolean skipHeader1 = (Boolean) arguments.getOrDefault("skipHeader1", null);
                     Boolean skipHeader2 = (Boolean) arguments.getOrDefault("skipHeader2", null);
-                    String uniqueKeyColumn = (String) arguments.getOrDefault("uniqueKeyColumn", null);
                     @SuppressWarnings("unchecked")
                     Map<String, Double> thresholds = (Map<String, Double>) arguments.getOrDefault("thresholds", null);
-                    String customUniqueKey = (String) arguments.getOrDefault("customUniqueKey", null);
                     String ignoreColumns = (String) arguments.getOrDefault("ignoreColumns", null);
 
                     try {
-                        CompareResult result;
+                        // Generate auto filename and combine with directory path
+                        String autoFilename = generateReportFilename(file1Path, file2Path, "CSV");
+                        String fullOutputPath = new java.io.File(outputPath, autoFilename).getAbsolutePath();
 
-                        // Smart routing: Use V2 if enhanced parameters are provided
-                        if ((customUniqueKey != null && !customUniqueKey.trim().isEmpty()) ||
-                            (ignoreColumns != null && !ignoreColumns.trim().isEmpty())) {
-
-                            log.info("Using CSV comparison V2 - enhanced parameters detected");
-                            result = CsvComparisonMCPWrapper.compareCsvFilesV2(
-                                    file1Path, file2Path, delimiter1, delimiter2,
-                                    skipHeader1, skipHeader2, uniqueKeyColumn, thresholds,
-                                    customUniqueKey, ignoreColumns);
-                        } else {
-                            log.info("Using CSV comparison V1 - backwards compatibility mode");
-                            result = CsvComparisonMCPWrapper.compareCsvFiles(
-                                    file1Path, file2Path, delimiter1, delimiter2,
-                                    skipHeader1, skipHeader2, uniqueKeyColumn, thresholds);
-                        }
+                        // Use simplified CSV comparison method
+                        CompareResult result = CsvComparisonMCPWrapper.compareCsvFiles(
+                                file1Path, file2Path, delimiter1, delimiter2,
+                                skipHeader1, skipHeader2, uniqueKey, thresholds,
+                                ignoreColumns, fullOutputPath);
 
                         List<McpSchema.Content> contents = new ArrayList<>();
-                        contents.add(new McpSchema.TextContent("Mismatched Records: " + result.getMismatchRecordCount()));
+                        contents.add(new McpSchema.TextContent("CSV Comparison Complete"));
                         contents.add(new McpSchema.TextContent("Source Records: " + result.getSourceRecordCount()));
-                        contents.add(new McpSchema.TextContent("Mismatch Details: " + result.getMismatchDetail().toString()));
-                        contents.add(new McpSchema.TextContent("Mismatch Count by Columns: " + result.getMismatchCountByColumns().toString()));
+                        contents.add(new McpSchema.TextContent("Mismatched Records: " + result.getMismatchRecordCount()));
+                        contents.add(new McpSchema.TextContent("Mismatch Details: " +
+                                (result.getMismatchDetail() != null ? result.getMismatchDetail().toString() : "No details available")));
+                        contents.add(new McpSchema.TextContent("Mismatch Count by Columns: " +
+                                (result.getMismatchCountByColumns() != null ? result.getMismatchCountByColumns().toString() : "No data available")));
+                        contents.add(new McpSchema.TextContent("4-Sheet Excel Report: Generated successfully"));
+                        contents.add(new McpSchema.TextContent("Report Location: " + fullOutputPath));
 
                         return new McpSchema.CallToolResult(contents, false);
 
@@ -357,5 +399,79 @@ public class MCPApplication {
                     }
                 }
         );
+    }
+
+
+    /**
+     * Generate auto filename for comparison reports based on input files and timestamp.
+     */
+    private static String generateReportFilename(String file1Path, String file2Path, String type) {
+        // Extract base names without extensions
+        String baseName1 = new java.io.File(file1Path).getName();
+        String baseName2 = new java.io.File(file2Path).getName();
+
+        // Remove extensions
+        if (baseName1.contains(".")) {
+            baseName1 = baseName1.substring(0, baseName1.lastIndexOf('.'));
+        }
+        if (baseName2.contains(".")) {
+            baseName2 = baseName2.substring(0, baseName2.lastIndexOf('.'));
+        }
+
+        // Generate timestamp
+        String timestamp = java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"));
+
+        return String.format("%s_vs_%s_%s_comparison_%s.xlsx",
+                baseName1, baseName2, type.toLowerCase(), timestamp);
+    }
+
+    /**
+     * Test method to verify CSV comparison functionality with user's actual files.
+     */
+    private static void testUserCsvFiles() {
+        System.out.println("=== Testing Simplified CSV Comparison with User's Actual Files ===");
+
+        try {
+            String file1Path = "/Users/amresh/Downloads/compare_pre - Sheet1.csv";
+            String file2Path = "/Users/amresh/Downloads/compare_post - Sheet1.csv";
+            String uniqueKey = "id";
+
+            System.out.println("File 1: " + file1Path);
+            System.out.println("File 2: " + file2Path);
+            System.out.println("Unique Key: " + uniqueKey);
+
+            // Test unified CSV comparison method with 4-sheet Excel report generation
+            System.out.println("\n🔄 Testing unified CSV comparison method with auto-delimiter detection...");
+            CompareResult result = CsvComparisonMCPWrapper.compareCsvFiles(
+                file1Path, file2Path, null, null, false, false, uniqueKey, null, null, null
+            );
+
+            System.out.println("Unified CSV Comparison Result Summary:");
+            System.out.println("- Source Records: " + result.getSourceRecordCount());
+            System.out.println("- Total Source Records: " + result.getTotalSourceRecords());
+            System.out.println("- Total Target Records: " + result.getTotalTargetRecords());
+            System.out.println("- Mismatch Records: " + result.getMismatchRecordCount());
+            System.out.println("- Matching Records: " + result.getMatchingRecords());
+            System.out.println("- Source Type: " + (result.getSourceType() != null ? result.getSourceType() : "Not Set"));
+            System.out.println("- Target Type: " + (result.getTargetType() != null ? result.getTargetType() : "Not Set"));
+            System.out.println("- Source Location: " + (result.getSourceLocation() != null ? result.getSourceLocation() : "Not Set"));
+            System.out.println("- Target Location: " + (result.getTargetLocation() != null ? result.getTargetLocation() : "Not Set"));
+            System.out.println("- Mismatch Detail: " + (result.getMismatchDetail() != null ? "Available" : "NULL"));
+            System.out.println("- Mismatch Columns: " + (result.getMismatchCountByColumns() != null ? result.getMismatchCountByColumns() : "NULL"));
+
+            if (result.getMismatchDetail() != null) {
+                System.out.println("- Mismatch Details: " + result.getMismatchDetail().toString());
+            }
+
+            System.out.println("- 4-Sheet Excel Report: Generated automatically in current directory");
+
+            System.out.println("\n✅ Unified CSV comparison test completed successfully!");
+            System.out.println("🎉 Simplified: CSV comparisons now use unified architecture with mandatory 4-sheet Excel reports!");
+
+        } catch (Exception e) {
+            System.err.println("❌ Test failed with error: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
