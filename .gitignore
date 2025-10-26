@@ -1,0 +1,88 @@
+# Compiled class files
+*.class
+
+# Log files
+*.log
+
+# Package files
+*.jar
+*.war
+*.ear
+
+# Maven
+target/
+!src/main/**/resources/
+
+# Generated sources
+generated-sources/
+.generation/
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar
+mvnw
+mvnw.cmd
+
+# IDEs and editors
+.idea/
+*.iml
+.vscode/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# IntelliJ
+out/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Temporary files
+tmp/
+*.tmp
+
+# Test / coverage
+coverage/
+*.coverage
+
+# Archives
+*.zip
+*.tar.gz
+
+# Ignore build outputs created by CI or local tooling
+/target/
+
+# Keep node_modules if present (common in polyglot repos)
+node_modules/
+
+# Lockfiles (optional)
+# package-lock.json
+# pnpm-lock.yaml
+
+# JetBrains
+.idea/
+
+# VSCode settings
+.vscode/
+
+# OS generated files
+*.swp
+
+# IntelliJ workspace
+.idea
+
+# Gradle (if later used)
+.gradle/
+build/
+
+# Rider
+*.sln
+*.user

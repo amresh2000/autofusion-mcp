@@ -97,8 +97,8 @@ Compare two CSV files using unified AfCsvReader + AfTableComparisonCTRLV2 archit
 **Optional Parameters:**
 - `delimiter1` (optional): Delimiter for first CSV (auto-detected if not specified)
 - `delimiter2` (optional): Delimiter for second CSV (auto-detected if not specified)
-- `skipHeader1` (optional): Skip header in first file (default: false)
-- `skipHeader2` (optional): Skip header in second file (default: false)
+- `skipHeader1` (optional): Skip header in first file (default: true - assumes headers present)
+- `skipHeader2` (optional): Skip header in second file (default: true - assumes headers present)
 - `thresholds` (optional): Map of column names to percentage thresholds for numeric comparisons
 - `ignoreColumns` (optional): Comma-separated column names to ignore during comparison
 

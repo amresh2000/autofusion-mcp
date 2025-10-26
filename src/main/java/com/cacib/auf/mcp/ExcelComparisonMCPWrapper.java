@@ -95,41 +95,9 @@ public class ExcelComparisonMCPWrapper {
         }
     }
 
-    /**
-     * Simplified Excel comparison with minimal parameters.
-     * Uses default settings and generates 4-sheet report.
-     */
-    public static CompareResult compareExcelFilesSimple(String file1Path, String file2Path, String outputPath)
-            throws IOException {
-        return compareExcelFiles(file1Path, file2Path, null, null, null, outputPath, null, null);
-    }
 
-    /**
-     * Excel comparison with custom unique key.
-     */
-    public static CompareResult compareExcelFilesWithUniqueKey(
-            String file1Path, String file2Path, String uniqueKey, String outputPath)
-            throws IOException {
-        return compareExcelFiles(file1Path, file2Path, uniqueKey, null, null, outputPath, null, null);
-    }
 
-    /**
-     * Excel comparison with thresholds for numeric columns.
-     */
-    public static CompareResult compareExcelFilesWithThresholds(
-            String file1Path, String file2Path, String uniqueKey, Map<String, Double> thresholds, String outputPath)
-            throws IOException {
-        return compareExcelFiles(file1Path, file2Path, uniqueKey, thresholds, null, outputPath, null, null);
-    }
 
-    /**
-     * Excel comparison with ignore columns.
-     */
-    public static CompareResult compareExcelFilesWithIgnoreColumns(
-            String file1Path, String file2Path, String uniqueKey, Set<String> ignoreColumns, String outputPath)
-            throws IOException {
-        return compareExcelFiles(file1Path, file2Path, uniqueKey, null, ignoreColumns, outputPath, null, null);
-    }
 
     /**
      * Determine the appropriate path for the Excel report output.

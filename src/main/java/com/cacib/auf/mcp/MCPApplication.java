@@ -221,31 +221,15 @@ public class MCPApplication {
                         schema
                 ),
                 (exchange, arguments) -> {
-                    // Validate required parameters
+                    // Validate required parameters using helper method
                     String file1Path = (String) arguments.get("file1Path");
                     String file2Path = (String) arguments.get("file2Path");
                     String uniqueKey = (String) arguments.get("uniqueKey");
                     String outputPath = (String) arguments.get("outputPath");
 
-                    if (file1Path == null || file1Path.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file1Path"));
-                        return new McpSchema.CallToolResult(errorContents, true);
-                    }
-                    if (file2Path == null || file2Path.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file2Path"));
-                        return new McpSchema.CallToolResult(errorContents, true);
-                    }
-                    if (uniqueKey == null || uniqueKey.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: uniqueKey"));
-                        return new McpSchema.CallToolResult(errorContents, true);
-                    }
-                    if (outputPath == null || outputPath.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: outputPath"));
-                        return new McpSchema.CallToolResult(errorContents, true);
+                    McpSchema.CallToolResult validationResult = validateRequiredParams(file1Path, file2Path, uniqueKey, outputPath);
+                    if (validationResult != null) {
+                        return validationResult; // Return validation error
                     }
 
                     // Optional parameters
@@ -256,11 +240,8 @@ public class MCPApplication {
                     String targetSheetName = (String) arguments.getOrDefault("targetSheetName", null);
 
                     try {
-                        // Convert ignoreColumns string to Set
-                        Set<String> ignoreColumns = null;
-                        if (ignoreColumnsStr != null && !ignoreColumnsStr.trim().isEmpty()) {
-                            ignoreColumns = Set.of(ignoreColumnsStr.split(","));
-                        }
+                        // Convert ignoreColumns string to Set using helper method
+                        Set<String> ignoreColumns = parseIgnoreColumns(ignoreColumnsStr);
 
                         // Generate auto filename and combine with directory path
                         String autoFilename = generateReportFilename(file1Path, file2Path, "Excel");
@@ -271,17 +252,8 @@ public class MCPApplication {
                                 file1Path, file2Path, uniqueKey, thresholds, ignoreColumns,
                                 fullOutputPath, sourceSheetName, targetSheetName);
 
-                        List<McpSchema.Content> contents = new ArrayList<>();
-                        contents.add(new McpSchema.TextContent("Excel Comparison Complete"));
-                        contents.add(new McpSchema.TextContent("Source Records: " + result.getSourceRecordCount()));
-                        contents.add(new McpSchema.TextContent("Mismatched Records: " + result.getMismatchRecordCount()));
-                        contents.add(new McpSchema.TextContent("Mismatch Details: " +
-                                (result.getMismatchDetail() != null ? result.getMismatchDetail().toString() : "No details available")));
-                        contents.add(new McpSchema.TextContent("Mismatch Count by Columns: " +
-                                (result.getMismatchCountByColumns() != null ? result.getMismatchCountByColumns().toString() : "No data available")));
-                        contents.add(new McpSchema.TextContent("4-Sheet Excel Report: Generated successfully"));
-                        contents.add(new McpSchema.TextContent("Report Location: " + fullOutputPath));
-
+                        // Format response using helper method
+                        List<McpSchema.Content> contents = formatComparisonResult(result, "Excel", fullOutputPath);
                         return new McpSchema.CallToolResult(contents, false);
 
                     } catch (Exception e) {
@@ -306,19 +278,37 @@ public class MCPApplication {
             "properties": {
                 "file1Path": { "type": "string" },
                 "file2Path": { "type": "string" },
-                "delimiter1": { "type": "string" },
-                "delimiter2": { "type": "string" },
-                "skipHeader1": { "type": "boolean" },
-                "skipHeader2": { "type": "boolean" },
-                "uniqueKey": { "type": "string" },
-                "thresholds": { "type": "object" },
+                "delimiter1": {
+                    "type": "string",
+                    "description": "Delimiter for first CSV file (null for auto-detection)"
+                },
+                "delimiter2": {
+                    "type": "string",
+                    "description": "Delimiter for second CSV file (null for auto-detection)"
+                },
+                "skipHeader1": {
+                    "type": "boolean",
+                    "description": "Whether to skip header row in first file (default: true)"
+                },
+                "skipHeader2": {
+                    "type": "boolean",
+                    "description": "Whether to skip header row in second file (default: true)"
+                },
+                "uniqueKey": {
+                    "type": "string",
+                    "description": "Column name(s) to use as unique key for row matching (required). For multi-column keys, use comma-separated format (e.g., 'CustomerID,Region')"
+                },
+                "thresholds": {
+                    "type": "object",
+                    "description": "Map of column names to percentage thresholds for numeric comparisons (e.g., {'Price': 5.0, 'Amount': 2.0})"
+                },
                 "ignoreColumns": {
                     "type": "string",
-                    "description": "CSV string of columns to ignore during comparison (e.g., 'password,ssn,credit_card')"
+                    "description": "Comma-separated column names to ignore during comparison (e.g., 'Timestamp,LastModified')"
                 },
                 "outputPath": {
                     "type": "string",
-                    "description": "Output directory path for 4-sheet Excel report (required)"
+                    "description": "Output directory path for generated 4-sheet Excel report (required)"
                 }
             },
             "required": ["file1Path", "file2Path", "uniqueKey", "outputPath"]
@@ -332,31 +322,15 @@ public class MCPApplication {
                         schema
                 ),
                 (exchange, arguments) -> {
-                    // Validate required parameters
+                    // Validate required parameters using helper method
                     String file1Path = (String) arguments.get("file1Path");
                     String file2Path = (String) arguments.get("file2Path");
                     String uniqueKey = (String) arguments.get("uniqueKey");
                     String outputPath = (String) arguments.get("outputPath");
 
-                    if (file1Path == null || file1Path.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file1Path"));
-                        return new McpSchema.CallToolResult(errorContents, true);
-                    }
-                    if (file2Path == null || file2Path.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: file2Path"));
-                        return new McpSchema.CallToolResult(errorContents, true);
-                    }
-                    if (uniqueKey == null || uniqueKey.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: uniqueKey"));
-                        return new McpSchema.CallToolResult(errorContents, true);
-                    }
-                    if (outputPath == null || outputPath.trim().isEmpty()) {
-                        List<McpSchema.Content> errorContents = new ArrayList<>();
-                        errorContents.add(new McpSchema.TextContent("Missing required parameter: outputPath"));
-                        return new McpSchema.CallToolResult(errorContents, true);
+                    McpSchema.CallToolResult validationResult = validateRequiredParams(file1Path, file2Path, uniqueKey, outputPath);
+                    if (validationResult != null) {
+                        return validationResult; // Return validation error
                     }
 
                     // Optional parameters
@@ -379,17 +353,8 @@ public class MCPApplication {
                                 skipHeader1, skipHeader2, uniqueKey, thresholds,
                                 ignoreColumns, fullOutputPath);
 
-                        List<McpSchema.Content> contents = new ArrayList<>();
-                        contents.add(new McpSchema.TextContent("CSV Comparison Complete"));
-                        contents.add(new McpSchema.TextContent("Source Records: " + result.getSourceRecordCount()));
-                        contents.add(new McpSchema.TextContent("Mismatched Records: " + result.getMismatchRecordCount()));
-                        contents.add(new McpSchema.TextContent("Mismatch Details: " +
-                                (result.getMismatchDetail() != null ? result.getMismatchDetail().toString() : "No details available")));
-                        contents.add(new McpSchema.TextContent("Mismatch Count by Columns: " +
-                                (result.getMismatchCountByColumns() != null ? result.getMismatchCountByColumns().toString() : "No data available")));
-                        contents.add(new McpSchema.TextContent("4-Sheet Excel Report: Generated successfully"));
-                        contents.add(new McpSchema.TextContent("Report Location: " + fullOutputPath));
-
+                        // Format response using helper method
+                        List<McpSchema.Content> contents = formatComparisonResult(result, "CSV", fullOutputPath);
                         return new McpSchema.CallToolResult(contents, false);
 
                     } catch (Exception e) {
@@ -424,6 +389,69 @@ public class MCPApplication {
 
         return String.format("%s_vs_%s_%s_comparison_%s.xlsx",
                 baseName1, baseName2, type.toLowerCase(), timestamp);
+    }
+
+    /**
+     * Common helper method to validate required parameters for file comparison.
+     */
+    private static McpSchema.CallToolResult validateRequiredParams(String file1Path, String file2Path, String uniqueKey, String outputPath) {
+        if (file1Path == null || file1Path.trim().isEmpty()) {
+            List<McpSchema.Content> errorContents = new ArrayList<>();
+            errorContents.add(new McpSchema.TextContent("Missing required parameter: file1Path"));
+            return new McpSchema.CallToolResult(errorContents, true);
+        }
+        if (file2Path == null || file2Path.trim().isEmpty()) {
+            List<McpSchema.Content> errorContents = new ArrayList<>();
+            errorContents.add(new McpSchema.TextContent("Missing required parameter: file2Path"));
+            return new McpSchema.CallToolResult(errorContents, true);
+        }
+        if (uniqueKey == null || uniqueKey.trim().isEmpty()) {
+            List<McpSchema.Content> errorContents = new ArrayList<>();
+            errorContents.add(new McpSchema.TextContent("Missing required parameter: uniqueKey"));
+            return new McpSchema.CallToolResult(errorContents, true);
+        }
+        if (outputPath == null || outputPath.trim().isEmpty()) {
+            List<McpSchema.Content> errorContents = new ArrayList<>();
+            errorContents.add(new McpSchema.TextContent("Missing required parameter: outputPath"));
+            return new McpSchema.CallToolResult(errorContents, true);
+        }
+        return null; // All validation passed
+    }
+
+    /**
+     * Common helper method to parse ignore columns string into Set with proper validation.
+     */
+    private static Set<String> parseIgnoreColumns(String ignoreColumnsStr) {
+        if (ignoreColumnsStr == null || ignoreColumnsStr.trim().isEmpty()) {
+            return null;
+        }
+
+        Set<String> ignoreColumns = new HashSet<>();
+        String[] columns = ignoreColumnsStr.split(",");
+        for (String column : columns) {
+            String trimmed = column.trim();
+            if (!trimmed.isEmpty()) {
+                ignoreColumns.add(trimmed);
+            }
+        }
+        return ignoreColumns.isEmpty() ? null : ignoreColumns;
+    }
+
+    /**
+     * Common helper method to format comparison results for MCP response.
+     */
+    private static List<McpSchema.Content> formatComparisonResult(CompareResult result, String type, String reportPath) {
+        List<McpSchema.Content> contents = new ArrayList<>();
+        contents.add(new McpSchema.TextContent(type + " Comparison Complete"));
+        contents.add(new McpSchema.TextContent("Source Records: " + result.getSourceRecordCount()));
+        contents.add(new McpSchema.TextContent("Mismatched Records: " + result.getMismatchRecordCount()));
+        contents.add(new McpSchema.TextContent("Mismatch Details: " +
+                (result.getMismatchDetail() != null ? result.getMismatchDetail().toString() : "No details available")));
+        contents.add(new McpSchema.TextContent("Mismatch Count by Columns: " +
+                (result.getMismatchCountByColumns() != null ? result.getMismatchCountByColumns().toString() : "No data available")));
+        contents.add(new McpSchema.TextContent("4-Sheet Excel Report: Generated successfully"));
+        contents.add(new McpSchema.TextContent("Report Location: " + reportPath));
+        return contents;
     }
 
     /**
